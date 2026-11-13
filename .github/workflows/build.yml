@@ -18,27 +18,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex gcc-arm-linux-gnueabi gcc-arm-linux-gnueabihf git gnupg gperf imagemagick libncurses5-dev libssl-dev lz4 unzip zip python3
 
-      - name: Scarica AnyKernel3
-        run: |
-          git clone --depth=1 https://github.com anykernel
-
       - name: Configura e compila il kernel GT-I9195
         run: |
           mkdir -p out
           make O=out ARCH=arm lineageos_serranoltexx_defconfig
           make -j$(nproc) O=out ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- zImage
 
-      - name: Impacchetta con AnyKernel3
-        run: |
-          cp out/arch/arm/boot/zImage anykernel/
-          cd anykernel
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
-          sed -i 's|block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;|block=/dev/block/platform/msm_sdcc.1/by-name/boot;|g' anykernel.sh
-          zip -r9 ../Kernel-OC-2GHz-serranoltexx-LOS18.1.zip * -x .git README.md *placeholder
-
-      - name: Carica ZIP flashabile
+      - name: Carica zImage compilato
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-OC-2GHz-serranoltexx-LOS18.1
-          path: Kernel-OC-2GHz-serranoltexx-LOS18.1.zip
+          name: zImage-OC-serranoltexx
+          path: out/arch/arm/boot/zImage
           
