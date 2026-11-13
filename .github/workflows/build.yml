@@ -1,39 +1,45 @@
 name: Build S4 Mini GT-I9195 OC Kernel
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ "main", "lineage-18.1" ]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout sorgenti kernel
         uses: actions/checkout@v4
 
-      - name: Installa dipendenze e toolchain GCC 4.9 ufficiale
+      - name: Installa dipendenze
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev device-tree-compiler python2 git curl
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick libncurses5-dev libssl-dev lz4 unzip zip python3
+
+      - name: Scarica Toolchain GCC 4.9 e AnyKernel3
+        run: |
           git clone --depth=1 https://github.com toolchain
+          git clone --depth=1 https://github.com anykernel
 
       - name: Configura e compila il kernel GT-I9195
         run: |
-          export ARCH=arm
-          export SUBARCH=arm
-          export CROSS_COMPILE=$(pwd)/toolchain/bin/arm-linux-androideabi-
-          rm -rf arch/arm/include/mach
-          ln -s ../mach-msm/include/mach arch/arm/include/mach
-          DEFCONFIG=$(find arch/arm/configs -name "*serranolte*" -o -name "*serrano*lte*" | head -n 1 | sed 's|arch/arm/configs/||')
-          echo "Defconfig trovato per GT-I9195: $DEFCONFIG"
-          make $DEFCONFIG
-          make -j$(nproc) zImage
+          mkdir -p out
+          make O=out ARCH=arm lineageos_serranoltexx_defconfig
+          make -j$(nproc) O=out ARCH=arm CROSS_COMPILE=$PWD/toolchain/bin/arm-linux-androideabi- zImage
 
-      - name: Carica zImage compilata
+      - name: Impacchetta con AnyKernel3
+        run: |
+          cp out/arch/arm/boot/zImage anykernel/
+          cd anykernel
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
+          sed -i 's|block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;|block=/dev/block/platform/msm_sdcc.1/by-name/boot;|g' anykernel.sh
+          zip -r9 ../Kernel-OC-2GHz-serranoltexx-LOS18.1.zip * -x .git README.md *placeholder
+
+      - name: Carica ZIP flashabile
         uses: actions/upload-artifact@v4
         with:
-          name: gt-i9195-oc-kernel
-          path: arch/arm/boot/zImage*
+          name: Kernel-OC-2GHz-serranoltexx-LOS18.1
+          path: Kernel-OC-2GHz-serranoltexx-LOS18.1.zip
           
