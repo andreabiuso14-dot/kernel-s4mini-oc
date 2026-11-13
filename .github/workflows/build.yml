@@ -7,32 +7,33 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout sorgenti kernel
         uses: actions/checkout@v4
 
-      - name: Installa dipendenze e toolchain ARM
+      - name: Installa dipendenze e toolchain GCC 4.9 ufficiale
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev gcc-arm-linux-gnueabihf device-tree-compiler python3
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev device-tree-compiler python2 git curl
+          git clone --depth=1 https://github.com toolchain
 
       - name: Configura e compila il kernel GT-I9195
         run: |
           export ARCH=arm
           export SUBARCH=arm
-          export CROSS_COMPILE=arm-linux-gnueabihf-
+          export CROSS_COMPILE=$(pwd)/toolchain/bin/arm-linux-androideabi-
           rm -rf arch/arm/include/mach
           ln -s ../mach-msm/include/mach arch/arm/include/mach
           DEFCONFIG=$(find arch/arm/configs -name "*serranolte*" -o -name "*serrano*lte*" | head -n 1 | sed 's|arch/arm/configs/||')
           echo "Defconfig trovato per GT-I9195: $DEFCONFIG"
           make $DEFCONFIG
-          make -j$(nproc) KCFLAGS="-w" zImage
+          make -j$(nproc) zImage
 
       - name: Carica zImage compilata
         uses: actions/upload-artifact@v4
         with:
           name: gt-i9195-oc-kernel
-          path: arch/arm/boot/zImage
+          path: arch/arm/boot/zImage*
           
