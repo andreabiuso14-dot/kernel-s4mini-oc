@@ -23,7 +23,9 @@ jobs:
           export ARCH=arm
           export SUBARCH=arm
           export CROSS_COMPILE=arm-linux-gnueabihf-
-          make lineageos_serranoltexx_defconfig
+          DEFCONFIG=$(ls arch/arm/configs/*serranoltexx*defconfig | head -n 1 | xargs basename)
+          echo "Uso defconfig: $DEFCONFIG"
+          make $DEFCONFIG
           make -j$(nproc) KCFLAGS="-w" zImage
 
       - name: Carica zImage compilata
