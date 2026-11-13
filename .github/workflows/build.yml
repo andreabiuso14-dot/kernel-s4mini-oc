@@ -13,21 +13,20 @@ jobs:
       - name: Checkout sorgenti kernel
         uses: actions/checkout@v4
 
-      - name: Installa dipendenze
+      - name: Installa dipendenze e Toolchain ARM
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick libncurses5-dev libssl-dev lz4 unzip zip python3
+          sudo apt-get install -y bc bison build-essential ccache curl flex gcc-arm-linux-gnueabi gcc-arm-linux-gnueabihf git gnupg gperf imagemagick libncurses5-dev libssl-dev lz4 unzip zip python3
 
-      - name: Scarica Toolchain GCC 4.9 e AnyKernel3
+      - name: Scarica AnyKernel3
         run: |
-          git clone --depth=1 https://github.com toolchain
           git clone --depth=1 https://github.com anykernel
 
       - name: Configura e compila il kernel GT-I9195
         run: |
           mkdir -p out
           make O=out ARCH=arm lineageos_serranoltexx_defconfig
-          make -j$(nproc) O=out ARCH=arm CROSS_COMPILE=$PWD/toolchain/bin/arm-linux-androideabi- zImage
+          make -j$(nproc) O=out ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- zImage
 
       - name: Impacchetta con AnyKernel3
         run: |
