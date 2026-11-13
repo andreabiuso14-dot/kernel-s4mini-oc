@@ -1,4 +1,4 @@
-name: Build S4 Mini OC Kernel
+name: Build S4 Mini GT-I9195 OC Kernel
 
 on:
   workflow_dispatch:
@@ -18,19 +18,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev gcc-arm-linux-gnueabihf device-tree-compiler python3
 
-      - name: Configura e compila il kernel
+      - name: Configura e compila il kernel GT-I9195
         run: |
           export ARCH=arm
           export SUBARCH=arm
           export CROSS_COMPILE=arm-linux-gnueabihf-
-          DEFCONFIG=$(ls arch/arm/configs/*serranoltexx*defconfig | head -n 1 | xargs basename)
-          echo "Uso defconfig: $DEFCONFIG"
+          DEFCONFIG=$(find arch/arm/configs -name "*serranolte*" -o -name "*serrano*lte*" | head -n 1 | sed 's|arch/arm/configs/||')
+          echo "Defconfig trovato per GT-I9195: $DEFCONFIG"
+          if [ -z "$DEFCONFIG" ]; then
+            echo "Elenco defconfig disponibili in arch/arm/configs:"
+            find arch/arm/configs
+            exit 1
+          fi
           make $DEFCONFIG
           make -j$(nproc) KCFLAGS="-w" zImage
 
       - name: Carica zImage compilata
         uses: actions/upload-artifact@v4
         with:
-          name: serranoltexx-oc-kernel
+          name: gt-i9195-oc-kernel
           path: arch/arm/boot/zImage
           
