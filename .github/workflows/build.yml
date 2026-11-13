@@ -23,13 +23,10 @@ jobs:
           export ARCH=arm
           export SUBARCH=arm
           export CROSS_COMPILE=arm-linux-gnueabihf-
+          rm -rf arch/arm/include/mach
+          ln -s ../mach-msm/include/mach arch/arm/include/mach
           DEFCONFIG=$(find arch/arm/configs -name "*serranolte*" -o -name "*serrano*lte*" | head -n 1 | sed 's|arch/arm/configs/||')
           echo "Defconfig trovato per GT-I9195: $DEFCONFIG"
-          if [ -z "$DEFCONFIG" ]; then
-            echo "Elenco defconfig disponibili in arch/arm/configs:"
-            find arch/arm/configs
-            exit 1
-          fi
           make $DEFCONFIG
           make -j$(nproc) KCFLAGS="-w" zImage
 
