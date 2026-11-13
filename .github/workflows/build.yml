@@ -21,7 +21,9 @@ jobs:
       - name: Configura e compila il kernel GT-I9195
         run: |
           mkdir -p out
-          make O=out ARCH=arm lineageos_serranoltexx_defconfig
+          DEFCONFIG=$(ls arch/arm/configs/ | grep serranoltexx | head -n 1)
+          echo "Trovato defconfig: $DEFCONFIG"
+          make O=out ARCH=arm $DEFCONFIG
           make -j$(nproc) O=out ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- zImage
 
       - name: Carica zImage compilato
