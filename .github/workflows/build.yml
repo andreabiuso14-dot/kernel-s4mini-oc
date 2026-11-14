@@ -1,46 +1,30 @@
 name: Build Kernel S4 Mini OC
-
-on:
-  push:
-    branches: [ "*" ]
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Checkout sorgenti kernel
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Installa GCC 9 ARM e dipendenze
+      - name: Setup GCC 9
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-9-arm-linux-gnueabihf binutils-arm-linux-gnueabihf gcc-9 build-essential libncurses-dev bison flex libssl-dev bc python-is-python3
+          sudo apt-get update && sudo apt-get install -y gcc-9-arm-linux-gnueabihf binutils-arm-linux-gnueabihf gcc-9 build-essential libncurses-dev bison flex libssl-dev bc python-is-python3
           sudo ln -sf /usr/bin/arm-linux-gnueabihf-gcc-9 /usr/bin/arm-linux-gnueabihf-gcc
           sudo ln -sf /usr/bin/gcc-9 /usr/bin/gcc
 
-      - name: Configura e compila il kernel GT-I9195
+      - name: Compila Kernel
         run: |
-          export ARCH=arm
-          export SUBARCH=arm
-          export CROSS_COMPILE=arm-linux-gnueabihf-
-          export KCFLAGS="-fcommon -Wno-error"
-          export HOSTCFLAGS="-fcommon -Wno-error"
-          
-          # Risolve errore yylloc su kernel 3.4
+          export ARCH=arm SUBARCH=arm CROSS_COMPILE=arm-linux-gnueabihf-
+          export KCFLAGS="-fcommon -Wno-error" HOSTCFLAGS="-fcommon -Wno-error"
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
-          
-          # Trova automaticamente il defconfig esatto per serranoltexx
-          DEFCONFIG=$(ls arch/arm/configs/ | grep -E "serranoltexx.*defconfig" | head -n 1)
-          echo "Uso defconfig: $DEFCONFIG"
+          DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*" | sed 's|arch/arm/configs/||' | grep -E "lte|serrano_defconfig" | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*msm8930*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+          echo "Defconfig selezionato: $DEFCONFIG"
           make "$DEFCONFIG"
-          
-          # Compila il kernel usando tutti i core del server
           make -j$(nproc) zImage
 
-      - name: Carica zImage compilato
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: S4Mini-OC-Kernel-zImage
           path: arch/arm/boot/zImage*
