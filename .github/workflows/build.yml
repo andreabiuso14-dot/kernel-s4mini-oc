@@ -1,8 +1,8 @@
-name: Build S4 Mini GT-I9195 OC Kernel
+name: Build Kernel S4 Mini OC
 
 on:
   push:
-    branches: [ "main", "lineage-18.1" ]
+    branches: [ "*" ]
   workflow_dispatch:
 
 jobs:
@@ -13,22 +13,35 @@ jobs:
       - name: Checkout sorgenti kernel
         uses: actions/checkout@v4
 
-      - name: Installa dipendenze e Toolchain ARM
+      - name: Installa GCC 9 ARM e dipendenze
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex gcc-arm-linux-gnueabi gcc-arm-linux-gnueabihf git gnupg gperf imagemagick libncurses5-dev libssl-dev lz4 unzip zip python3
+          sudo apt-get install -y gcc-9-arm-linux-gnueabihf binutils-arm-linux-gnueabihf gcc-9 build-essential libncurses-dev bison flex libssl-dev bc python-is-python3
+          sudo ln -sf /usr/bin/arm-linux-gnueabihf-gcc-9 /usr/bin/arm-linux-gnueabihf-gcc
+          sudo ln -sf /usr/bin/gcc-9 /usr/bin/gcc
 
       - name: Configura e compila il kernel GT-I9195
         run: |
-          mkdir -p out
-          DEFCONFIG=$(ls arch/arm/configs/ | grep serranoltexx | head -n 1)
-          echo "Trovato defconfig: $DEFCONFIG"
-          make O=out ARCH=arm $DEFCONFIG
-          make -j$(nproc) O=out ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- zImage
+          export ARCH=arm
+          export SUBARCH=arm
+          export CROSS_COMPILE=arm-linux-gnueabihf-
+          export KCFLAGS="-fcommon -Wno-error"
+          export HOSTCFLAGS="-fcommon -Wno-error"
+          
+          # Risolve errore yylloc su kernel 3.4
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
+          
+          # Trova automaticamente il defconfig esatto per serranoltexx
+          DEFCONFIG=$(ls arch/arm/configs/ | grep -E "serranoltexx.*defconfig" | head -n 1)
+          echo "Uso defconfig: $DEFCONFIG"
+          make "$DEFCONFIG"
+          
+          # Compila il kernel usando tutti i core del server
+          make -j$(nproc) zImage
 
       - name: Carica zImage compilato
         uses: actions/upload-artifact@v4
         with:
-          name: zImage-OC-serranoltexx
-          path: out/arch/arm/boot/zImage
+          name: S4Mini-OC-Kernel-zImage
+          path: arch/arm/boot/zImage*
           
