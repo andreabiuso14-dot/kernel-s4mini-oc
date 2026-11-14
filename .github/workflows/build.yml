@@ -7,22 +7,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup GCC 9
+      - name: Setup Toolchain Android GCC 4.9
         run: |
-          sudo apt-get update && sudo apt-get install -y gcc-9-arm-linux-gnueabihf binutils-arm-linux-gnueabihf gcc-9 build-essential libncurses-dev bison flex libssl-dev bc python-is-python3
-          sudo ln -sf /usr/bin/arm-linux-gnueabihf-gcc-9 /usr/bin/arm-linux-gnueabihf-gcc
-          sudo ln -sf /usr/bin/gcc-9 /usr/bin/gcc
+          sudo apt-get update && sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev bc python-is-python3 git
+          git clone --depth=1 https://github.com toolchain
 
       - name: Compila Kernel
         run: |
-          export ARCH=arm SUBARCH=arm CROSS_COMPILE=arm-linux-gnueabihf-
-          export KCFLAGS="-fcommon -Wno-error" HOSTCFLAGS="-fcommon -Wno-error"
+          export ARCH=arm SUBARCH=arm
+          export CROSS_COMPILE=$PWD/toolchain/bin/arm-linux-androideabi-
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*" | sed 's|arch/arm/configs/||' | grep -E "lte|serrano_defconfig" | head -n 1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*msm8930*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           echo "Defconfig selezionato: $DEFCONFIG"
           make "$DEFCONFIG"
-          make -j$(nproc) zImage
+          make -j$(nproc) zImage || make -j1 zImage
 
       - uses: actions/upload-artifact@v4
         with:
