@@ -1,20 +1,4 @@
-name: Build Kernel S4 Mini OC
-on: [push, workflow_dispatch]
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup GCC 9
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-9-arm-linux-gnueabihf binutils-arm-linux-gnueabihf gcc-9 build-essential libncurses-dev bison flex libssl-dev bc python-is-python3
-          sudo ln -sf /usr/bin/arm-linux-gnueabihf-gcc-9 /usr/bin/arm-linux-gnueabihf-gcc
-          sudo ln -sf /usr/bin/gcc-9 /usr/bin/gcc
-
-      - name: Compila Kernel
+      - name: Compila Kernel GT-I9195
         run: |
           export ARCH=arm
           export SUBARCH=arm
@@ -25,20 +9,29 @@ jobs:
           make mrproper
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile
-          DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*" | sed 's|arch/arm/configs/||' | grep -E "lte|serrano_defconfig" | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*msm8930*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
-          echo ">>> Uso defconfig: $DEFCONFIG"
+          
+          # Cerca prima il defconfig specifico per GT-I9195 (serranoltexx / eur_lte)
+          DEFCONFIG=$(find arch/arm/configs -type f \( -name "*serranoltexx*defconfig" -o -name "*serrano_eur_lte*defconfig" \) | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+          
+          echo ">>> Uso defconfig per GT-I9195: $DEFCONFIG"
           make -s "$DEFCONFIG"
-          if ! make -j$(nproc) zImage > build.log 2>&1; then
+          
+          if ! make -j$(nproc) zImage modules > build.log 2>&1; then
             echo "=== PRIMO ERRORE REALE ==="
             grep -n -B 8 -A 2 "Error 1" build.log | head -n 35
             exit 1
           fi
+          
+          # Raccoglie tutti i moduli .ko in una cartella pulita per l'upload
+          mkdir -p out_modules
+          find . -name "*.ko" -exec cp {} out_modules/ \;
           echo "=== COMPILAZIONE COMPLETATA CON SUCCESSO ==="
 
       - uses: actions/upload-artifact@v4
         with:
-          name: S4Mini-OC-Kernel-zImage
-          path: arch/arm/boot/zImage*
-          if-no-files-found: error
-          
+          name: S4Mini-GT-I9195-OC-Kernel
+          path: |
+            arch/arm/boot/zImage
+            out_modules/*.ko
+          if-no-files-found: warn
