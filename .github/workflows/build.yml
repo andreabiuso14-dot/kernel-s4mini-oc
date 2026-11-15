@@ -27,21 +27,33 @@ jobs:
           export ARCH=arm
           export SUBARCH=arm
           export CROSS_COMPILE=arm-linux-gnueabihf-
-          export KCFLAGS="-std=gnu89 -fcommon -I$(pwd)/arch/arm/mach-msm/include -Wno-error -Wno-attributes -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
+          export KCFLAGS="-std=gnu89 -fcommon -Wno-error -Wno-implicit-function-declaration -Wno-attributes -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
           export HOSTCFLAGS="-std=gnu89 -fcommon -Wno-error"
           export KAFLAGS="-Wa,--no-warn"
 
           make mrproper
+
+          # Rimuove -Werror forzata dal Makefile principale e applica fix Linux 3.4
+          sed -i 's/-Werror//g' Makefile
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
 
-          DEFCONFIG=$(find arch/arm/configs -type f -name "lineageos_serranoltexx_defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano_eur_lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+          echo ">>> Lista dei defconfig disponibili nel repository:"
+          find arch/arm/configs -type f | sed 's|arch/arm/configs/||' | sort
 
-          echo ">>> Defconfig selezionato: $DEFCONFIG"
+          # Cerca il defconfig specifico per GT-I9195 (serranoltexx / msm8930)
+          DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*" | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano_eur_lte*" | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*lte*" | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*" | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*msm8930*" | sed 's|arch/arm/configs/||' | head -n 1)
+
+          if [ -z "$DEFCONFIG" ]; then
+            echo "ERRORE CRITICO: Nessun defconfig trovato per S4 Mini o MSM8930!"
+            exit 1
+          fi
+
+          echo ">>> Defconfig selezionato con successo: $DEFCONFIG"
           make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 "$DEFCONFIG"
 
           echo ">>> Avvio compilazione del kernel su $(nproc) core CPU..."
@@ -76,7 +88,7 @@ jobs:
           do.cleanuponabort=0
           device.name1=serranoltexx
           device.name2=serrano3gxx
-          device.name3=serranolte
+          device.name3=serrano_eur_lte
           device.name4=GT-I9195
           device.name5=
           supported.versions=11
