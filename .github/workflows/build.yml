@@ -33,11 +33,12 @@ jobs:
 
           make mrproper
 
-          # Fix mirato per GCC 9 e binutils moderni
+          # Fix per GCC 9, binutils moderni e inclusione forzata devices-8930.o
           sed -i 's/-Werror=/-Wno-error=/g' Makefile
           sed -i 's/ -Werror / /g' Makefile
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
+          sed -i '1i obj-y += devices-8930.o' arch/arm/mach-msm/Makefile || true
           sed -i '1i AFLAGS_aesbs-core.o := -Wa,-mimplicit-it=thumb' arch/arm/crypto/Makefile || true
 
           # Seleziona il defconfig base Samsung Serrano e la variante GT-I9195 (eur_lte)
@@ -56,17 +57,6 @@ jobs:
             VARIANT_DEFCONFIG="$VARIANT" \
             SELINUX_DEFCONFIG="$SELINUX" \
             "$BASE_DEFCONFIG"
-
-          # Forza l'attivazione dei simboli hardware MSM8930 per includere devices-8930.o nel linker
-          ./scripts/config --enable CONFIG_ARCH_MSM8930 || true
-          ./scripts/config --enable CONFIG_MSM_BUS_SCALING || true
-          ./scripts/config --enable CONFIG_MSM_RTB || true
-          ./scripts/config --enable CONFIG_MSM_IOMMU || true
-          ./scripts/config --enable CONFIG_MSM_CACHE_DUMP || true
-          make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 oldnoconfig
-
-          echo ">>> Verifica simboli MSM8930 nel .config:"
-          grep -E "CONFIG_ARCH_MSM8930|CONFIG_MACH_SERRANO" .config || true
 
           echo ">>> Avvio compilazione del kernel su $(nproc) core CPU..."
           if ! make -j$(nproc) CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 zImage > build.log 2>&1; then
