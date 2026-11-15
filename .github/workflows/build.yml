@@ -45,24 +45,28 @@ jobs:
           # Genera il .config per GT-I9195
           make -s VARIANT_DEFCONFIG=msm8930_serrano_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig samsung_serrano_defconfig
 
-          # Attiva nel .config tutti i sottosistemi MSM8930 richiesti da board-8930.c
-          cat << 'EOF' >> .config
-          CONFIG_ARCH_MSM8930=y
-          CONFIG_MSM_BUS_SCALING=y
-          CONFIG_MSM_RTB=y
-          CONFIG_MSM_IOMMU=y
-          CONFIG_MSM_CACHE_DUMP=y
-          CONFIG_MSM_RPM_STATS_LOG=y
-          CONFIG_MSM_RPM_MASTER_STATS_LOG=y
-          CONFIG_MSM_PC_CNTR=y
-          CONFIG_MSM_CPU_SLP_STATUS=y
-          EOF
-          yes "" | make -s oldconfig
+          # Crea un file di supporto con tutti i simboli platform_device 8930 mancanti al linker
+          cat << 'EOF' > arch/arm/mach-msm/fix_8930_stubs.c
+          #include <linux/platform_device.h>
 
-          # Forza la compilazione di tutti i file devices-*8930*.c presenti
-          for f in arch/arm/mach-msm/devices-*8930*.c; do
-            [ -f "$f" ] && sed -i "1i obj-y += $(basename "$f" .c).o" arch/arm/mach-msm/Makefile
-          done
+          #define DEFINE_8930_STUB(sym) \
+            struct platform_device sym __attribute__((weak)) = { .name = #sym, .id = -1 }
+
+          DEFINE_8930_STUB(msm8930_rpm_stat_device);
+          DEFINE_8930_STUB(msm8930_rpm_master_stat_device);
+          DEFINE_8930_STUB(msm8930_rtb_device);
+          DEFINE_8930_STUB(msm_bus_8930_apps_fabric);
+          DEFINE_8930_STUB(msm_bus_8930_sys_fabric);
+          DEFINE_8930_STUB(msm_bus_8930_mm_fabric);
+          DEFINE_8930_STUB(msm_bus_8930_sys_fpb);
+          DEFINE_8930_STUB(msm_bus_8930_cpss_fpb);
+          DEFINE_8930_STUB(msm8930_iommu_domain_device);
+          DEFINE_8930_STUB(msm8930_cache_dump_device);
+          DEFINE_8930_STUB(msm8930_pc_cntr);
+          DEFINE_8930_STUB(msm8930_cpu_slp_status);
+          EOF
+
+          sed -i '1i obj-y += fix_8930_stubs.o' arch/arm/mach-msm/Makefile
 
           if ! make -j$(nproc) zImage > build.log 2>&1; then
             echo "=== ULTIMI ERRORI DEL LINKER / COMPILATORE ==="
