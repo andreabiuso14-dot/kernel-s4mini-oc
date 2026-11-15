@@ -42,17 +42,31 @@ jobs:
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
           sed -i '1i AFLAGS_aesbs-core.o := -Wa,-mimplicit-it=thumb' arch/arm/crypto/Makefile || true
 
+          # Mostra il file esatto che definisce quei simboli e attiva ogni file devices-*8930*
+          echo "=== FILE CHE DEFINISCE I SIMBOLI 8930 ==="
+          grep -rn "msm_bus_8930_sys_fpb" arch/arm/mach-msm/ || true
+
           # Genera il .config per GT-I9195
           make -s VARIANT_DEFCONFIG=msm8930_serrano_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig samsung_serrano_defconfig
 
-          # Controlla quale CONFIG controlla devices-8930.o nel Makefile e attivalo
-          echo "=== REGOLA DEVICES-8930 NEL MAKEFILE ==="
-          grep -n "devices-8930" arch/arm/mach-msm/Makefile || true
-          echo "=== SIMBOLI ARCH_MSM ATTIVI NEL .CONFIG ==="
-          grep -E "CONFIG_ARCH_MSM|CONFIG_MACH_SERRANO" .config || true
+          # Attiva nel .config tutti i sottosistemi MSM8930 richiesti da board-8930.c
+          cat << 'EOF' >> .config
+          CONFIG_ARCH_MSM8930=y
+          CONFIG_MSM_BUS_SCALING=y
+          CONFIG_MSM_RTB=y
+          CONFIG_MSM_IOMMU=y
+          CONFIG_MSM_CACHE_DUMP=y
+          CONFIG_MSM_RPM_STATS_LOG=y
+          CONFIG_MSM_RPM_MASTER_STATS_LOG=y
+          CONFIG_MSM_PC_CNTR=y
+          CONFIG_MSM_CPU_SLP_STATUS=y
+          EOF
+          make -s olddefconfig
 
-          # Forza la compilazione di devices-8930.o e avvia la build
-          sed -i '1i obj-y += devices-8930.o' arch/arm/mach-msm/Makefile
+          # Forza la compilazione di tutti i file devices-*8930*.c presenti
+          for f in arch/arm/mach-msm/devices-*8930*.c; do
+            [ -f "$f" ] && sed -i "1i obj-y += $(basename "$f" .c).o" arch/arm/mach-msm/Makefile
+          done
 
           if ! make -j$(nproc) zImage > build.log 2>&1; then
             echo "=== ULTIMI ERRORI DEL LINKER / COMPILATORE ==="
