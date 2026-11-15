@@ -42,14 +42,14 @@ jobs:
           arm-linux-gnueabihf-gcc-9 --version
 
       # =========================================================================
-      # STEP 3: Applica fix compatibilita C89 e compila il kernel per GT-I9195
+      # STEP 3: Applica fix header MSM + C89 e compila il kernel per GT-I9195
       # =========================================================================
       - name: 3. Configurazione e Compilazione zImage
         run: |
           export ARCH=arm
           export SUBARCH=arm
           export CROSS_COMPILE=arm-linux-gnueabihf-
-          export KCFLAGS="-std=gnu89 -fcommon -Wno-error -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
+          export KCFLAGS="-std=gnu89 -fcommon -I$(pwd)/arch/arm/mach-msm/include -Wno-error -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
           export HOSTCFLAGS="-std=gnu89 -fcommon -Wno-error"
           export KAFLAGS="-Wa,--no-warn"
 
@@ -60,8 +60,12 @@ jobs:
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
 
-          echo ">>> Ricerca del file defconfig corretto per GT-I9195 (serranoltexx)..."
-          DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+          echo ">>> Elenco defconfig serrano trovati nel repository:"
+          find arch/arm/configs -type f -name "*serrano*" || true
+
+          # Cerca prima lineageos_serranoltexx_defconfig, poi altre varianti GT-I9195
+          DEFCONFIG=$(find arch/arm/configs -type f -name "lineageos_serranoltexx_defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano_eur_lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
