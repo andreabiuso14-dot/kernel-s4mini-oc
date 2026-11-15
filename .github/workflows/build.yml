@@ -29,15 +29,16 @@ jobs:
           export CROSS_COMPILE=arm-linux-gnueabihf-
           export KCFLAGS="-std=gnu89 -fcommon -Wno-error -Wno-implicit-function-declaration -Wno-attributes -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
           export HOSTCFLAGS="-std=gnu89 -fcommon -Wno-error"
-          export KAFLAGS="-Wa,--no-warn"
+          export KAFLAGS="-Wa,--no-warn -Wa,-mimplicit-it=thumb"
 
           make mrproper
 
-          # Fix mirato per GCC 9 senza rompere i flag -Werror=... del Makefile
+          # Fix mirato per GCC 9 e binutils moderni
           sed -i 's/-Werror=/-Wno-error=/g' Makefile
           sed -i 's/ -Werror / /g' Makefile
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
+          sed -i '1i AFLAGS_aesbs-core.o := -Wa,-mimplicit-it=thumb' arch/arm/crypto/Makefile || true
 
           # Seleziona il defconfig base Samsung Serrano e la variante GT-I9195 (eur_lte)
           BASE_DEFCONFIG="samsung_serrano_defconfig"
