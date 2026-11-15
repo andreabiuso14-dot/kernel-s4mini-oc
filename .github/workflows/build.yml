@@ -1,6 +1,5 @@
 name: Build Kernel S4 Mini GT-I9195 OC (LineageOS 18.1)
 
-# Avvia la compilazione automaticamente a ogni push oppure manualmente dalla scheda Actions
 on:
   push:
   workflow_dispatch:
@@ -18,52 +17,50 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # STEP 2: Installa tutti gli strumenti Linux e il compilatore GCC 4.9.4
+      # STEP 2: Installa GCC 8 ARM ufficiale dai repository Ubuntu (zero download esterni)
       # =========================================================================
-      - name: 2. Setup ambiente e compilatore Linaro GCC 4.9.4
+      - name: 2. Setup ambiente e compilatore GCC 8 ARM
         run: |
-          echo ">>> Aggiornamento pacchetti di sistema e installazione dipendenze..."
+          echo ">>> Installazione dipendenze e cross-compiler ARM..."
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             bc \
             bison \
             build-essential \
-            curl \
             flex \
+            gcc-8-arm-linux-gnueabihf \
+            binutils-arm-linux-gnueabihf \
+            gcc-8 \
             git \
             libncurses-dev \
             libssl-dev \
             perl \
             python-is-python3 \
-            tar \
-            xz-utils \
             zip
 
-          echo ">>> Creazione cartella toolchain e download Linaro GCC 4.9.4..."
-          mkdir -p "$HOME/toolchain"
-          curl -fSL "https://linaro.org" \
-            -o "$HOME/gcc-linaro.tar.xz"
-          
-          echo ">>> Estrazione del compilatore..."
-          tar -xJf "$HOME/gcc-linaro.tar.xz" --strip-components=1 -C "$HOME/toolchain"
-          rm -f "$HOME/gcc-linaro.tar.xz"
-
           echo ">>> Verifica funzionamento compilatore:"
-          "$HOME/toolchain/bin/arm-linux-gnueabihf-gcc" --version
+          arm-linux-gnueabihf-gcc-8 --version
 
       # =========================================================================
-      # STEP 3: Configura e compila il kernel per GT-I9195 (serranoltexx)
+      # STEP 3: Applica fix compatibilita C89 e compila il kernel per GT-I9195
       # =========================================================================
       - name: 3. Configurazione e Compilazione zImage
         run: |
           export ARCH=arm
           export SUBARCH=arm
-          export CROSS_COMPILE="$HOME/toolchain/bin/arm-linux-gnueabihf-"
-          export KBUILD_BUILD_USER="S4MiniOC"
-          export KBUILD_BUILD_HOST="GitHubActions"
+          export CROSS_COMPILE=arm-linux-gnueabihf-
+          export CC=arm-linux-gnueabihf-gcc-8
+          export HOSTCC=gcc-8
+          export KCFLAGS="-std=gnu89 -fcommon -Wno-error -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
+          export HOSTCFLAGS="-std=gnu89 -fcommon -Wno-error"
+          export KAFLAGS="-Wa,--no-warn"
 
-          echo ">>> Pulizia completa dei sorgenti (make mrproper)..."
+          echo ">>> Pulizia completa dei sorgenti..."
           make mrproper
+
+          echo ">>> Applicazione patch di compatibilita per Linux 3.4..."
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
+          sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
 
           echo ">>> Ricerca del file defconfig corretto per GT-I9195 (serranoltexx)..."
           DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
@@ -73,16 +70,15 @@ jobs:
 
           if [ -z "$DEFCONFIG" ]; then
             echo "ERRORE CRITICO: Nessun defconfig trovato per S4 Mini!"
-            echo "File presenti in arch/arm/configs/:"
             ls -la arch/arm/configs/
             exit 1
           fi
 
-          echo ">>> Defconfig selezionato con successo: $DEFCONFIG"
-          make -s "$DEFCONFIG"
+          echo ">>> Defconfig selezionato: $DEFCONFIG"
+          make -s CC=arm-linux-gnueabihf-gcc-8 HOSTCC=gcc-8 "$DEFCONFIG"
 
           echo ">>> Avvio compilazione del kernel su $(nproc) core CPU..."
-          if ! make -j$(nproc) zImage > build.log 2>&1; then
+          if ! make -j$(nproc) CC=arm-linux-gnueabihf-gcc-8 HOSTCC=gcc-8 zImage > build.log 2>&1; then
             echo "=================================================================="
             echo "   ERRORE DURANTE LA COMPILAZIONE DEL KERNEL!                     "
             echo "=================================================================="
@@ -95,7 +91,7 @@ jobs:
           fi
 
           if [ ! -f "arch/arm/boot/zImage" ]; then
-            echo "ERRORE: La compilazione e terminata ma arch/arm/boot/zImage non esiste!"
+            echo "ERRORE: arch/arm/boot/zImage non trovata!"
             exit 1
           fi
 
@@ -109,13 +105,9 @@ jobs:
       # =========================================================================
       - name: 4. Creazione pacchetto ZIP flashabile per TWRP
         run: |
-          echo ">>> Scaricamento template AnyKernel3..."
           git clone --depth=1 https://github.com "$HOME/AnyKernel3"
-
-          echo ">>> Copia della zImage compilata dentro AnyKernel3..."
           cp arch/arm/boot/zImage "$HOME/AnyKernel3/"
 
-          echo ">>> Configurazione automatica di anykernel.sh per GT-I9195 (serranoltexx)..."
           cat << 'EOF' > "$HOME/AnyKernel3/anykernel.sh"
           # AnyKernel3 Ramdisk Mod Script
           # osm0sis @ xda-developers
@@ -146,12 +138,9 @@ jobs:
           write_boot;
           EOF
 
-          echo ">>> Creazione archivio ZIP finale..."
           cd "$HOME/AnyKernel3"
           rm -rf .git README.md
           zip -r9 "$HOME/S4Mini-GT-I9195-LOS18-OC-TWRP.zip" *
-
-          echo ">>> Pacchetto ZIP pronto:"
           ls -lh "$HOME/S4Mini-GT-I9195-LOS18-OC-TWRP.zip"
 
       # =========================================================================
