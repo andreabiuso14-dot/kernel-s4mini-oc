@@ -1,21 +1,167 @@
-name: Build Kernel S4 Mini OC
-on: [push, workflow_dispatch]
+name: Build Kernel S4 Mini GT-I9195 OC (LineageOS 18.1)
+
+# Avvia la compilazione automaticamente a ogni push oppure manualmente dalla scheda Actions
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-kernel:
+    name: Compila Kernel GT-I9195 + Crea ZIP TWRP
     runs-on: ubuntu-22.04
+
     steps:
-      - uses: actions/checkout@v4
+      # =========================================================================
+      # STEP 1: Scarica i sorgenti del tuo repository
+      # =========================================================================
+      - name: 1. Download sorgenti del kernel
+        uses: actions/checkout@v4
 
-      - name: Setup e Compilazione
+      # =========================================================================
+      # STEP 2: Installa tutti gli strumenti Linux e il compilatore GCC 4.9.4
+      # =========================================================================
+      - name: 2. Setup ambiente e compilatore Linaro GCC 4.9.4
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq bc bison build-essential flex libncurses-dev libssl-dev python-is-python3
-          git clone --depth=1 -b lineage-19.1 https://github.com ~/tc
-          export ARCH=arm SUBARCH=arm CROSS_COMPILE=~/tc/bin/arm-linux-androideabi-
-          DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*defconfig" -o -name "*serrano*lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
-          make mrproper && make -s "$DEFCONFIG" && make -j$(nproc) zImage
+          echo ">>> Aggiornamento pacchetti di sistema e installazione dipendenze..."
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            bc \
+            bison \
+            build-essential \
+            curl \
+            flex \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            perl \
+            python-is-python3 \
+            tar \
+            xz-utils \
+            zip
 
-      - uses: actions/upload-artifact@v4
+          echo ">>> Creazione cartella toolchain e download Linaro GCC 4.9.4..."
+          mkdir -p "$HOME/toolchain"
+          curl -fSL "https://linaro.org" \
+            -o "$HOME/gcc-linaro.tar.xz"
+          
+          echo ">>> Estrazione del compilatore..."
+          tar -xJf "$HOME/gcc-linaro.tar.xz" --strip-components=1 -C "$HOME/toolchain"
+          rm -f "$HOME/gcc-linaro.tar.xz"
+
+          echo ">>> Verifica funzionamento compilatore:"
+          "$HOME/toolchain/bin/arm-linux-gnueabihf-gcc" --version
+
+      # =========================================================================
+      # STEP 3: Configura e compila il kernel per GT-I9195 (serranoltexx)
+      # =========================================================================
+      - name: 3. Configurazione e Compilazione zImage
+        run: |
+          export ARCH=arm
+          export SUBARCH=arm
+          export CROSS_COMPILE="$HOME/toolchain/bin/arm-linux-gnueabihf-"
+          export KBUILD_BUILD_USER="S4MiniOC"
+          export KBUILD_BUILD_HOST="GitHubActions"
+
+          echo ">>> Pulizia completa dei sorgenti (make mrproper)..."
+          make mrproper
+
+          echo ">>> Ricerca del file defconfig corretto per GT-I9195 (serranoltexx)..."
+          DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano_eur_lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
+
+          if [ -z "$DEFCONFIG" ]; then
+            echo "ERRORE CRITICO: Nessun defconfig trovato per S4 Mini!"
+            echo "File presenti in arch/arm/configs/:"
+            ls -la arch/arm/configs/
+            exit 1
+          fi
+
+          echo ">>> Defconfig selezionato con successo: $DEFCONFIG"
+          make -s "$DEFCONFIG"
+
+          echo ">>> Avvio compilazione del kernel su $(nproc) core CPU..."
+          if ! make -j$(nproc) zImage > build.log 2>&1; then
+            echo "=================================================================="
+            echo "   ERRORE DURANTE LA COMPILAZIONE DEL KERNEL!                     "
+            echo "=================================================================="
+            echo ">>> Prime righe di errore rilevate nel codice:"
+            grep -n -C 4 -E "error:|fatal error:" build.log | head -n 50
+            echo "------------------------------------------------------------------"
+            echo ">>> Ultime 30 righe del log di compilazione:"
+            tail -n 30 build.log
+            exit 1
+          fi
+
+          if [ ! -f "arch/arm/boot/zImage" ]; then
+            echo "ERRORE: La compilazione e terminata ma arch/arm/boot/zImage non esiste!"
+            exit 1
+          fi
+
+          echo "=================================================================="
+          echo "   COMPILAZIONE COMPLETATA CON SUCCESSO!                          "
+          echo "=================================================================="
+          ls -lh arch/arm/boot/zImage
+
+      # =========================================================================
+      # STEP 4: Impacchetta la zImage in uno ZIP flashabile da TWRP (AnyKernel3)
+      # =========================================================================
+      - name: 4. Creazione pacchetto ZIP flashabile per TWRP
+        run: |
+          echo ">>> Scaricamento template AnyKernel3..."
+          git clone --depth=1 https://github.com "$HOME/AnyKernel3"
+
+          echo ">>> Copia della zImage compilata dentro AnyKernel3..."
+          cp arch/arm/boot/zImage "$HOME/AnyKernel3/"
+
+          echo ">>> Configurazione automatica di anykernel.sh per GT-I9195 (serranoltexx)..."
+          cat << 'EOF' > "$HOME/AnyKernel3/anykernel.sh"
+          # AnyKernel3 Ramdisk Mod Script
+          # osm0sis @ xda-developers
+
+          properties() { '
+          kernel.string=S4 Mini GT-I9195 OC Kernel (LineageOS 18.1)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=serranoltexx
+          device.name2=serrano3gxx
+          device.name3=serranolte
+          device.name4=GT-I9195
+          device.name5=
+          supported.versions=11
+          supported.patchlevels=
+          '; }
+
+          block=/dev/block/platform/msm_sdcc.1/by-name/boot;
+          is_slot_device=0;
+          ramdisk_compression=auto;
+
+          . tools/ak3-core.sh;
+
+          dump_boot;
+          write_boot;
+          EOF
+
+          echo ">>> Creazione archivio ZIP finale..."
+          cd "$HOME/AnyKernel3"
+          rm -rf .git README.md
+          zip -r9 "$HOME/S4Mini-GT-I9195-LOS18-OC-TWRP.zip" *
+
+          echo ">>> Pacchetto ZIP pronto:"
+          ls -lh "$HOME/S4Mini-GT-I9195-LOS18-OC-TWRP.zip"
+
+      # =========================================================================
+      # STEP 5: Carica lo ZIP finale e la zImage grezza negli Artifacts di GitHub
+      # =========================================================================
+      - name: 5. Upload Kernel ZIP e zImage su GitHub Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: S4Mini-GT-I9195-LOS18-OC
-          path: arch/arm/boot/zImage
+          name: S4Mini-GT-I9195-LOS18-OC-Release
+          path: |
+            ~/S4Mini-GT-I9195-LOS18-OC-TWRP.zip
+            arch/arm/boot/zImage
+          if-no-files-found: error
