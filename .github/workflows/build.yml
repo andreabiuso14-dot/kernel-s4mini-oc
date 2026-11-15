@@ -13,7 +13,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential libncurses-dev bison flex libssl-dev bc python-is-python3 git curl
-          git clone --depth=1 https://github.com ~/toolchain
+          git clone --depth=1 -b lineage-18.1 https://github.com ~/toolchain || \
+          git clone --depth=1 -b lineage-17.1 https://github.com ~/toolchain
 
       - name: Compila Kernel GT-I9195
         run: |
@@ -26,10 +27,17 @@ jobs:
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           echo ">>> Uso defconfig: $DEFCONFIG"
           
+          if [ -z "$DEFCONFIG" ]; then
+            echo "ERRORE: Nessun defconfig trovato per GT-I9195!"
+            exit 1
+          fi
+
           make -s "$DEFCONFIG"
           if ! make -j$(nproc) zImage > build.log 2>&1; then
-            echo "=== PRIMO ERRORE REALE ==="
-            grep -n -B 12 -A 2 "Error 1" build.log | head -n 40
+            echo "=== ERRORI DI COMPILAZIONE RILEVATI ==="
+            grep -n -E "error:|fatal error:" build.log | head -n 30
+            echo "=== DETTAGLIO ULTIMI LOG ==="
+            tail -n 25 build.log
             exit 1
           fi
           echo "=== COMPILAZIONE COMPLETATA CON SUCCESSO ==="
