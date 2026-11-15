@@ -22,7 +22,7 @@ jobs:
             git libncurses-dev libssl-dev perl python-is-python3 zip
           arm-linux-gnueabihf-gcc-9 --version
 
-      - name: 3. Configurazione e Compilazione zImage
+      - name: 3. Configurazione Samsung VARIANT_DEFCONFIG e Compilazione zImage
         run: |
           export ARCH=arm
           export SUBARCH=arm
@@ -33,28 +33,28 @@ jobs:
 
           make mrproper
 
-          # Rimuove -Werror forzata dal Makefile principale e applica fix Linux 3.4
-          sed -i 's/-Werror//g' Makefile
+          # Fix mirato per GCC 9 senza rompere i flag -Werror=... del Makefile
+          sed -i 's/-Werror=/-Wno-error=/g' Makefile
+          sed -i 's/ -Werror / /g' Makefile
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
 
-          echo ">>> Lista dei defconfig disponibili nel repository:"
-          find arch/arm/configs -type f | sed 's|arch/arm/configs/||' | sort
+          # Seleziona il defconfig base Samsung Serrano e la variante GT-I9195 (eur_lte)
+          BASE_DEFCONFIG="samsung_serrano_defconfig"
+          [ ! -f "arch/arm/configs/$BASE_DEFCONFIG" ] && BASE_DEFCONFIG="msm8930_serrano_defconfig"
 
-          # Cerca il defconfig specifico per GT-I9195 (serranoltexx / msm8930)
-          DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*" | sed 's|arch/arm/configs/||' | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano_eur_lte*" | sed 's|arch/arm/configs/||' | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*lte*" | sed 's|arch/arm/configs/||' | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*" | sed 's|arch/arm/configs/||' | head -n 1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*msm8930*" | sed 's|arch/arm/configs/||' | head -n 1)
+          VARIANT="msm8930_serrano_eur_lte_defconfig"
+          SELINUX=""
+          [ -f "arch/arm/configs/selinux_defconfig" ] && SELINUX="selinux_defconfig"
 
-          if [ -z "$DEFCONFIG" ]; then
-            echo "ERRORE CRITICO: Nessun defconfig trovato per S4 Mini o MSM8930!"
-            exit 1
-          fi
+          echo ">>> Base Defconfig: $BASE_DEFCONFIG"
+          echo ">>> Variant Defconfig (GT-I9195): $VARIANT"
+          echo ">>> SELinux Defconfig: $SELINUX"
 
-          echo ">>> Defconfig selezionato con successo: $DEFCONFIG"
-          make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 "$DEFCONFIG"
+          make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 \
+            VARIANT_DEFCONFIG="$VARIANT" \
+            SELINUX_DEFCONFIG="$SELINUX" \
+            "$BASE_DEFCONFIG"
 
           echo ">>> Avvio compilazione del kernel su $(nproc) core CPU..."
           if ! make -j$(nproc) CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 zImage > build.log 2>&1; then
