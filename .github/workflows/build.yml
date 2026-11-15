@@ -17,9 +17,9 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # STEP 2: Installa GCC 8 ARM ufficiale dai repository Ubuntu (zero download esterni)
+      # STEP 2: Installa GCC 9 ARM ufficiale dai repository Ubuntu 22.04
       # =========================================================================
-      - name: 2. Setup ambiente e compilatore GCC 8 ARM
+      - name: 2. Setup ambiente e compilatore GCC 9 ARM
         run: |
           echo ">>> Installazione dipendenze e cross-compiler ARM..."
           sudo apt-get update -qq
@@ -28,9 +28,9 @@ jobs:
             bison \
             build-essential \
             flex \
-            gcc-8-arm-linux-gnueabihf \
+            gcc-9-arm-linux-gnueabihf \
             binutils-arm-linux-gnueabihf \
-            gcc-8 \
+            gcc-9 \
             git \
             libncurses-dev \
             libssl-dev \
@@ -39,7 +39,7 @@ jobs:
             zip
 
           echo ">>> Verifica funzionamento compilatore:"
-          arm-linux-gnueabihf-gcc-8 --version
+          arm-linux-gnueabihf-gcc-9 --version
 
       # =========================================================================
       # STEP 3: Applica fix compatibilita C89 e compila il kernel per GT-I9195
@@ -49,8 +49,6 @@ jobs:
           export ARCH=arm
           export SUBARCH=arm
           export CROSS_COMPILE=arm-linux-gnueabihf-
-          export CC=arm-linux-gnueabihf-gcc-8
-          export HOSTCC=gcc-8
           export KCFLAGS="-std=gnu89 -fcommon -Wno-error -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
           export HOSTCFLAGS="-std=gnu89 -fcommon -Wno-error"
           export KAFLAGS="-Wa,--no-warn"
@@ -75,10 +73,10 @@ jobs:
           fi
 
           echo ">>> Defconfig selezionato: $DEFCONFIG"
-          make -s CC=arm-linux-gnueabihf-gcc-8 HOSTCC=gcc-8 "$DEFCONFIG"
+          make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 "$DEFCONFIG"
 
           echo ">>> Avvio compilazione del kernel su $(nproc) core CPU..."
-          if ! make -j$(nproc) CC=arm-linux-gnueabihf-gcc-8 HOSTCC=gcc-8 zImage > build.log 2>&1; then
+          if ! make -j$(nproc) CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 zImage > build.log 2>&1; then
             echo "=================================================================="
             echo "   ERRORE DURANTE LA COMPILAZIONE DEL KERNEL!                     "
             echo "=================================================================="
