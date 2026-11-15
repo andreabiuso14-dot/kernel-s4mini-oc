@@ -1,4 +1,4 @@
-name: Build Kernel S4 Mini GT-I9195 OC (LineageOS 18.1)
+name: Build Kernel S4 Mini GT-I9195 OC (Auto-Fix)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   build-kernel:
-    name: Compila Kernel GT-I9195 + Crea ZIP TWRP
+    name: Compila Kernel GT-I9195 + Auto-Fix + Crea ZIP TWRP
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,7 +22,7 @@ jobs:
             git libncurses-dev libssl-dev perl python-is-python3 zip
           arm-linux-gnueabihf-gcc-9 --version
 
-      - name: 3. Configurazione Samsung VARIANT_DEFCONFIG e Compilazione zImage
+      - name: 3. Configurazione e Compilazione Auto-Riparante
         run: |
           export ARCH=arm
           export SUBARCH=arm
@@ -33,45 +33,98 @@ jobs:
 
           make mrproper
 
-          # Fix per GCC 9, binutils moderni e inclusione forzata devices-8930.o
+          # Fix preventivi di base per Linux 3.4 su GCC 9
           sed -i 's/-Werror=/-Wno-error=/g' Makefile
           sed -i 's/ -Werror / /g' Makefile
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
-          sed -i '1i obj-y += devices-8930.o' arch/arm/mach-msm/Makefile || true
           sed -i '1i AFLAGS_aesbs-core.o := -Wa,-mimplicit-it=thumb' arch/arm/crypto/Makefile || true
 
-          # Seleziona il defconfig base Samsung Serrano e la variante GT-I9195 (eur_lte)
+          # Configurazione Samsung GT-I9195 (serranoltexx / eur_lte)
           BASE_DEFCONFIG="samsung_serrano_defconfig"
           [ ! -f "arch/arm/configs/$BASE_DEFCONFIG" ] && BASE_DEFCONFIG="msm8930_serrano_defconfig"
-
           VARIANT="msm8930_serrano_eur_lte_defconfig"
           SELINUX=""
           [ -f "arch/arm/configs/selinux_defconfig" ] && SELINUX="selinux_defconfig"
-
-          echo ">>> Base Defconfig: $BASE_DEFCONFIG"
-          echo ">>> Variant Defconfig (GT-I9195): $VARIANT"
-          echo ">>> SELinux Defconfig: $SELINUX"
 
           make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 \
             VARIANT_DEFCONFIG="$VARIANT" \
             SELINUX_DEFCONFIG="$SELINUX" \
             "$BASE_DEFCONFIG"
 
-          echo ">>> Avvio compilazione del kernel su $(nproc) core CPU..."
-          if ! make -j$(nproc) CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 zImage > build.log 2>&1; then
+          # Ciclo di compilazione con auto-diagnosi e auto-patch (fino a 6 tentativi automatici)
+          MAX_TRIES=6
+          SUCCESS=0
+
+          for ATTEMPT in $(seq 1 $MAX_TRIES); do
             echo "=================================================================="
-            echo "   ERRORE DURANTE LA COMPILAZIONE DEL KERNEL!                     "
+            echo ">>> TENTATIVO DI COMPILAZIONE #$ATTEMPT su $MAX_TRIES..."
             echo "=================================================================="
-            echo ">>> Righe esatte con 'error:' o 'undefined reference' nel log:"
-            grep -n -C 3 -E "error:|undefined reference" build.log | head -n 45
-            echo "------------------------------------------------------------------"
-            echo ">>> Contesto intorno a Error 1:"
-            grep -n -B 12 -A 2 "Error 1" build.log | head -n 40
+
+            if make -j$(nproc) CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 zImage > build.log 2>&1; then
+              SUCCESS=1
+              break
+            fi
+
+            echo ">>> Rilevato errore al tentativo #$ATTEMPT. Avvio analisi automatica..."
+            FIXED_SOMETHING=0
+
+            # CASO 1: Simboli mancanti al linker (undefined reference)
+            UNDEF_SYMS=$(grep -oE "undefined reference to \`[^']+'" build.log | sed "s/undefined reference to \`//;s/'//" | sort -u | head -n 10)
+            if [ -n "$UNDEF_SYMS" ]; then
+              echo ">>> Simboli mancanti rilevati: $UNDEF_SYMS"
+              for SYM in $UNDEF_SYMS; do
+                # Cerca il file .c in arch/arm/mach-msm che definisce quel simbolo
+                SRC_FILE=$(grep -rlE "\b$SYM\b" arch/arm/mach-msm/*.c 2>/dev/null | grep -v "board-" | head -n 1)
+                if [ -n "$SRC_FILE" ]; then
+                  OBJ_FILE=$(basename "$SRC_FILE" .c).o
+                  if ! grep -q "obj-y += $OBJ_FILE" arch/arm/mach-msm/Makefile; then
+                    echo ">>> [AUTO-FIX] Aggiungo $OBJ_FILE al Makefile di mach-msm per risolvere $SYM"
+                    sed -i "1i obj-y += $OBJ_FILE" arch/arm/mach-msm/Makefile
+                    FIXED_SOMETHING=1
+                  fi
+                fi
+              done
+            fi
+
+            # CASO 2: File assembly (.S) con errori Thumb IT block
+            ASM_ERR_FILES=$(grep -E "Error: thumb conditional instruction should be in IT block" build.log | cut -d: -f1 | sort -u)
+            if [ -n "$ASM_ERR_FILES" ]; then
+              for ASM_F in $ASM_ERR_FILES; do
+                DIR_NAME=$(dirname "$ASM_F")
+                OBJ_NAME=$(basename "$ASM_F" .S).o
+                echo ">>> [AUTO-FIX] Applico -Wa,-mimplicit-it=thumb a $OBJ_NAME in $DIR_NAME/Makefile"
+                sed -i "1i AFLAGS_$OBJ_NAME := -Wa,-mimplicit-it=thumb" "$DIR_NAME/Makefile"
+                FIXED_SOMETHING=1
+              done
+            fi
+
+            # CASO 3: Simboli duplicati (multiple definition)
+            MULT_OBJS=$(grep -B 1 "multiple definition of" build.log | grep -oE "[a-zA-Z0-9_-]+\.o" | sort -u)
+            if [ -n "$MULT_OBJS" ]; then
+              for M_OBJ in $MULT_OBJS; do
+                echo ">>> [AUTO-FIX] Rimuovo inclusione forzata duplicata di $M_OBJ"
+                sed -i "/obj-y += $M_OBJ/d" arch/arm/mach-msm/Makefile
+                FIXED_SOMETHING=1
+              done
+            fi
+
+            if [ "$FIXED_SOMETHING" -eq 0 ]; then
+              echo ">>> Impossibile auto-riparare l'errore corrente. Ecco il dettaglio:"
+              grep -n -C 4 -E "error:|undefined reference|Error 1" build.log | head -n 45
+              exit 1
+            fi
+          done
+
+          if [ "$SUCCESS" -ne 1 ] || [ ! -f "arch/arm/boot/zImage" ]; then
+            echo "ERRORE: Compilazione non riuscita dopo $MAX_TRIES tentativi."
+            tail -n 30 build.log
             exit 1
           fi
 
-          echo "=== COMPILAZIONE COMPLETATA CON SUCCESSO! ==="
+          echo "=================================================================="
+          echo "   COMPILAZIONE COMPLETATA CON SUCCESSO!                          "
+          echo "=================================================================="
           ls -lh arch/arm/boot/zImage
 
       - name: 4. Creazione pacchetto ZIP flashabile per TWRP
