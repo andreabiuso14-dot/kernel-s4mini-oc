@@ -10,71 +10,36 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # =========================================================================
-      # STEP 1: Scarica i sorgenti del tuo repository
-      # =========================================================================
       - name: 1. Download sorgenti del kernel
         uses: actions/checkout@v4
 
-      # =========================================================================
-      # STEP 2: Installa GCC 9 ARM ufficiale dai repository Ubuntu 22.04
-      # =========================================================================
       - name: 2. Setup ambiente e compilatore GCC 9 ARM
         run: |
-          echo ">>> Installazione dipendenze e cross-compiler ARM..."
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
-            bc \
-            bison \
-            build-essential \
-            flex \
-            gcc-9-arm-linux-gnueabihf \
-            binutils-arm-linux-gnueabihf \
-            gcc-9 \
-            git \
-            libncurses-dev \
-            libssl-dev \
-            perl \
-            python-is-python3 \
-            zip
-
-          echo ">>> Verifica funzionamento compilatore:"
+            bc bison build-essential flex \
+            gcc-9-arm-linux-gnueabihf binutils-arm-linux-gnueabihf gcc-9 \
+            git libncurses-dev libssl-dev perl python-is-python3 zip
           arm-linux-gnueabihf-gcc-9 --version
 
-      # =========================================================================
-      # STEP 3: Applica fix header MSM + C89 e compila il kernel per GT-I9195
-      # =========================================================================
       - name: 3. Configurazione e Compilazione zImage
         run: |
           export ARCH=arm
           export SUBARCH=arm
           export CROSS_COMPILE=arm-linux-gnueabihf-
-          export KCFLAGS="-std=gnu89 -fcommon -I$(pwd)/arch/arm/mach-msm/include -Wno-error -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
+          export KCFLAGS="-std=gnu89 -fcommon -I$(pwd)/arch/arm/mach-msm/include -Wno-error -Wno-attributes -Wno-attribute-alias -Wno-array-bounds -Wno-misleading-indentation -Wno-bool-operation -Wno-int-in-bool-context -Wno-format-truncation -Wno-sizeof-pointer-memaccess -Wno-stringop-truncation"
           export HOSTCFLAGS="-std=gnu89 -fcommon -Wno-error"
           export KAFLAGS="-Wa,--no-warn"
 
-          echo ">>> Pulizia completa dei sorgenti..."
           make mrproper
-
-          echo ">>> Applicazione patch di compatibilita per Linux 3.4..."
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
 
-          echo ">>> Elenco defconfig serrano trovati nel repository:"
-          find arch/arm/configs -type f -name "*serrano*" || true
-
-          # Cerca prima lineageos_serranoltexx_defconfig, poi altre varianti GT-I9195
           DEFCONFIG=$(find arch/arm/configs -type f -name "lineageos_serranoltexx_defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serranoltexx*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano_eur_lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*lte*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm/configs -type f -name "*serrano*defconfig" | sed 's|arch/arm/configs/||' | head -n 1)
-
-          if [ -z "$DEFCONFIG" ]; then
-            echo "ERRORE CRITICO: Nessun defconfig trovato per S4 Mini!"
-            ls -la arch/arm/configs/
-            exit 1
-          fi
 
           echo ">>> Defconfig selezionato: $DEFCONFIG"
           make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 "$DEFCONFIG"
@@ -84,27 +49,17 @@ jobs:
             echo "=================================================================="
             echo "   ERRORE DURANTE LA COMPILAZIONE DEL KERNEL!                     "
             echo "=================================================================="
-            echo ">>> Prime righe di errore rilevate nel codice:"
-            grep -n -C 4 -E "error:|fatal error:" build.log | head -n 50
+            echo ">>> Righe esatte con 'error:' nel log:"
+            grep -n -C 3 "error:" build.log | head -n 45
             echo "------------------------------------------------------------------"
-            echo ">>> Ultime 30 righe del log di compilazione:"
-            tail -n 30 build.log
+            echo ">>> Contesto intorno a Error 1:"
+            grep -n -B 10 -A 2 "Error 1" build.log | head -n 40
             exit 1
           fi
 
-          if [ ! -f "arch/arm/boot/zImage" ]; then
-            echo "ERRORE: arch/arm/boot/zImage non trovata!"
-            exit 1
-          fi
-
-          echo "=================================================================="
-          echo "   COMPILAZIONE COMPLETATA CON SUCCESSO!                          "
-          echo "=================================================================="
+          echo "=== COMPILAZIONE COMPLETATA CON SUCCESSO! ==="
           ls -lh arch/arm/boot/zImage
 
-      # =========================================================================
-      # STEP 4: Impacchetta la zImage in uno ZIP flashabile da TWRP (AnyKernel3)
-      # =========================================================================
       - name: 4. Creazione pacchetto ZIP flashabile per TWRP
         run: |
           git clone --depth=1 https://github.com "$HOME/AnyKernel3"
@@ -112,8 +67,6 @@ jobs:
 
           cat << 'EOF' > "$HOME/AnyKernel3/anykernel.sh"
           # AnyKernel3 Ramdisk Mod Script
-          # osm0sis @ xda-developers
-
           properties() { '
           kernel.string=S4 Mini GT-I9195 OC Kernel (LineageOS 18.1)
           do.devicecheck=1
@@ -143,11 +96,7 @@ jobs:
           cd "$HOME/AnyKernel3"
           rm -rf .git README.md
           zip -r9 "$HOME/S4Mini-GT-I9195-LOS18-OC-TWRP.zip" *
-          ls -lh "$HOME/S4Mini-GT-I9195-LOS18-OC-TWRP.zip"
 
-      # =========================================================================
-      # STEP 5: Carica lo ZIP finale e la zImage grezza negli Artifacts di GitHub
-      # =========================================================================
       - name: 5. Upload Kernel ZIP e zImage su GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
