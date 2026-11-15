@@ -42,10 +42,6 @@ jobs:
           sed -i '1i CFLAGS_perf_trace_counters.o := -I$(src)' arch/arm/mach-msm/Makefile || true
           sed -i '1i AFLAGS_aesbs-core.o := -Wa,-mimplicit-it=thumb' arch/arm/crypto/Makefile || true
 
-          # Mostra il file esatto che definisce quei simboli e attiva ogni file devices-*8930*
-          echo "=== FILE CHE DEFINISCE I SIMBOLI 8930 ==="
-          grep -rn "msm_bus_8930_sys_fpb" arch/arm/mach-msm/ || true
-
           # Genera il .config per GT-I9195
           make -s VARIANT_DEFCONFIG=msm8930_serrano_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig samsung_serrano_defconfig
 
@@ -61,7 +57,7 @@ jobs:
           CONFIG_MSM_PC_CNTR=y
           CONFIG_MSM_CPU_SLP_STATUS=y
           EOF
-          make -s olddefconfig
+          yes "" | make -s oldconfig
 
           # Forza la compilazione di tutti i file devices-*8930*.c presenti
           for f in arch/arm/mach-msm/devices-*8930*.c; do
