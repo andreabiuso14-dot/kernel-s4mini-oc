@@ -20,7 +20,12 @@ jobs:
             bc bison build-essential flex \
             gcc-9-arm-linux-gnueabihf binutils-arm-linux-gnueabihf gcc-9 \
             git libncurses-dev libssl-dev perl python-is-python3 zip
-          arm-linux-gnueabihf-gcc-9 --version
+
+          # Crea i symlink standard per evitare "arm-linux-gnueabihf-gcc: command not found"
+          sudo ln -sf /usr/bin/arm-linux-gnueabihf-gcc-9 /usr/bin/arm-linux-gnueabihf-gcc
+          sudo ln -sf /usr/bin/gcc-9 /usr/bin/gcc
+
+          arm-linux-gnueabihf-gcc --version
 
       - name: 3. Configurazione e Compilazione Auto-Riparante
         run: |
@@ -47,13 +52,10 @@ jobs:
           SELINUX=""
           [ -f "arch/arm/configs/selinux_defconfig" ] && SELINUX="selinux_defconfig"
 
-          make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 \
-            VARIANT_DEFCONFIG="$VARIANT" \
-            SELINUX_DEFCONFIG="$SELINUX" \
-            "$BASE_DEFCONFIG"
+          make -s VARIANT_DEFCONFIG="$VARIANT" SELINUX_DEFCONFIG="$SELINUX" "$BASE_DEFCONFIG"
 
-          # Ciclo di compilazione con auto-diagnosi e auto-patch (fino a 6 tentativi automatici)
-          MAX_TRIES=6
+          # Ciclo di compilazione con auto-diagnosi e auto-patch (fino a 20 tentativi automatici, senza limite di simboli)
+          MAX_TRIES=20
           SUCCESS=0
 
           for ATTEMPT in $(seq 1 $MAX_TRIES); do
@@ -61,7 +63,7 @@ jobs:
             echo ">>> TENTATIVO DI COMPILAZIONE #$ATTEMPT su $MAX_TRIES..."
             echo "=================================================================="
 
-            if make -j$(nproc) CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 zImage > build.log 2>&1; then
+            if make -j$(nproc) zImage > build.log 2>&1; then
               SUCCESS=1
               break
             fi
@@ -69,12 +71,11 @@ jobs:
             echo ">>> Rilevato errore al tentativo #$ATTEMPT. Avvio analisi automatica..."
             FIXED_SOMETHING=0
 
-            # CASO 1: Simboli mancanti al linker (undefined reference)
-            UNDEF_SYMS=$(grep -oE "undefined reference to \`[^']+'" build.log | sed "s/undefined reference to \`//;s/'//" | sort -u | head -n 10)
+            # CASO 1: Tutti i simboli mancanti al linker (undefined reference) in un colpo solo
+            UNDEF_SYMS=$(grep -oE "undefined reference to \`[^']+'" build.log | sed "s/undefined reference to \`//;s/'//" | sort -u)
             if [ -n "$UNDEF_SYMS" ]; then
-              echo ">>> Simboli mancanti rilevati: $UNDEF_SYMS"
+              echo ">>> Simboli mancanti rilevati: $(echo $UNDEF_SYMS | wc -w)"
               for SYM in $UNDEF_SYMS; do
-                # Cerca il file .c in arch/arm/mach-msm che definisce quel simbolo
                 SRC_FILE=$(grep -rlE "\b$SYM\b" arch/arm/mach-msm/*.c 2>/dev/null | grep -v "board-" | head -n 1)
                 if [ -n "$SRC_FILE" ]; then
                   OBJ_FILE=$(basename "$SRC_FILE" .c).o
@@ -110,8 +111,8 @@ jobs:
             fi
 
             if [ "$FIXED_SOMETHING" -eq 0 ]; then
-              echo ">>> Impossibile auto-riparare l'errore corrente. Ecco il dettaglio:"
-              grep -n -C 4 -E "error:|undefined reference|Error 1" build.log | head -n 45
+              echo ">>> Errore non auto-riparabile rilevato. Ultime righe reali del log:"
+              tail -n 35 build.log
               exit 1
             fi
           done
