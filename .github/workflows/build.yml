@@ -57,16 +57,27 @@ jobs:
             SELINUX_DEFCONFIG="$SELINUX" \
             "$BASE_DEFCONFIG"
 
+          # Forza l'attivazione dei simboli hardware MSM8930 per includere devices-8930.o nel linker
+          ./scripts/config --enable CONFIG_ARCH_MSM8930 || true
+          ./scripts/config --enable CONFIG_MSM_BUS_SCALING || true
+          ./scripts/config --enable CONFIG_MSM_RTB || true
+          ./scripts/config --enable CONFIG_MSM_IOMMU || true
+          ./scripts/config --enable CONFIG_MSM_CACHE_DUMP || true
+          make -s CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 oldnoconfig
+
+          echo ">>> Verifica simboli MSM8930 nel .config:"
+          grep -E "CONFIG_ARCH_MSM8930|CONFIG_MACH_SERRANO" .config || true
+
           echo ">>> Avvio compilazione del kernel su $(nproc) core CPU..."
           if ! make -j$(nproc) CC=arm-linux-gnueabihf-gcc-9 HOSTCC=gcc-9 zImage > build.log 2>&1; then
             echo "=================================================================="
             echo "   ERRORE DURANTE LA COMPILAZIONE DEL KERNEL!                     "
             echo "=================================================================="
-            echo ">>> Righe esatte con 'error:' nel log:"
-            grep -n -C 3 "error:" build.log | head -n 45
+            echo ">>> Righe esatte con 'error:' o 'undefined reference' nel log:"
+            grep -n -C 3 -E "error:|undefined reference" build.log | head -n 45
             echo "------------------------------------------------------------------"
             echo ">>> Contesto intorno a Error 1:"
-            grep -n -B 10 -A 2 "Error 1" build.log | head -n 40
+            grep -n -B 12 -A 2 "Error 1" build.log | head -n 40
             exit 1
           fi
 
@@ -81,7 +92,7 @@ jobs:
           cat << 'EOF' > "$HOME/AnyKernel3/anykernel.sh"
           # AnyKernel3 Ramdisk Mod Script
           properties() { '
-          kernel.string=S4 Mini GT-I9195 OC Kernel (LineageOS 18.1)
+          kernel.string=S4 Mini GT-I9195 OC Kernel 2GHz (LineageOS 18.1)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -108,13 +119,13 @@ jobs:
 
           cd "$HOME/AnyKernel3"
           rm -rf .git README.md
-          zip -r9 "$HOME/S4Mini-GT-I9195-LOS18-OC-TWRP.zip" *
+          zip -r9 "$HOME/S4Mini-GT-I9195-LOS18-OC-2GHz-TWRP.zip" *
 
       - name: 5. Upload Kernel ZIP e zImage su GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: S4Mini-GT-I9195-LOS18-OC-Release
+          name: S4Mini-GT-I9195-LOS18-OC-2GHz-Release
           path: |
-            ~/S4Mini-GT-I9195-LOS18-OC-TWRP.zip
+            ~/S4Mini-GT-I9195-LOS18-OC-2GHz-TWRP.zip
             arch/arm/boot/zImage
           if-no-files-found: error
